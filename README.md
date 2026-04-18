@@ -12,7 +12,9 @@
 
 ![项目首页](./docs/screenshots/01-home.png)
 
-[查看报告预览 HTML](https://giovannixujingran-bit.github.io/ai-report-automation-demo/report-preview.html)
+## 产出案例
+
+[查看在线案例](https://giovannixujingran-bit.github.io/ai-report-automation-demo/report-preview.html)
 
 ## 项目价值
 
