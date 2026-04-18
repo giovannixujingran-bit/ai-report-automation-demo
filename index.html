@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>AI 报告自动化 Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+  <style>
+    .pair-onboarding-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 12000;
+      pointer-events: none;
+    }
+
+    .pair-onboarding-dim-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .pair-onboarding-dim {
+      position: fixed;
+      background: rgba(15, 23, 42, 0.44);
+      pointer-events: none;
+    }
+
+    .pair-onboarding-card {
+      position: fixed;
+      left: 24px;
+      top: 24px;
+      width: min(360px, calc(100vw - 24px));
+      border-radius: 12px;
+      background: #ffffff;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      box-shadow: 0 22px 40px rgba(15, 23, 42, 0.2);
+      padding: 14px;
+      color: #0f172a;
+      pointer-events: auto;
+    }
+
+    .pair-onboarding-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .pair-onboarding-progress {
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 8px;
+    }
+
+    .pair-onboarding-text {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #1e293b;
+      min-height: 42px;
+      margin-bottom: 10px;
+    }
+
+    .pair-onboarding-hint {
+      font-size: 12px;
+      color: #0f766e;
+      min-height: 18px;
+      margin-bottom: 10px;
+    }
+
+    .pair-onboarding-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .pair-onboarding-btn {
+      border: 1px solid #0f172a;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 14px;
+      cursor: pointer;
+    }
+
+    .pair-onboarding-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    @media (max-width: 768px) {
+      .pair-onboarding-card {
+        width: min(360px, calc(100vw - 24px));
+      }
+    }
+  </style>
+  <script>
+    document.write('<link rel="stylesheet" href="./src/styles/main.css?v=' + Date.now() + '">');
+  </script>
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-icon">PA</div>
+        <div>
+          <div class="brand-title" data-i18n="brand.title">AI 报告系统</div>
+          <div class="logo">报告自动化 Demo <span style="font-size: 12px; color: #666; font-weight: normal;">v2.3.0</span>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 0 0 14px 0; border-bottom: 1px solid rgba(148,163,184,0.25); margin-bottom: 14px;">
+        <label for="reportTypeSelect" style="font-size: 12px; font-weight: 500; display: block; margin-bottom: 6px;"
+          data-i18n="sidebar.reportLabel">报告类型:</label>
+        <select id="reportTypeSelect"
+          style="width: 100%; padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(15,23,42,.06); background: rgba(255,255,255,.75);">
+        </select>
+        <label for="languageSelect" style="font-size: 12px; font-weight: 500; display: block; margin: 12px 0 6px;"
+          data-i18n="sidebar.languageLabel">界面语言:</label>
+        <select id="languageSelect"
+          style="width: 100%; padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(15,23,42,.06); background: rgba(255,255,255,.75);">
+          <option value="zh" data-i18n="languages.zh">中文</option>
+          <option value="en" data-i18n="languages.en">English</option>
+        </select>
+      </div>
+      <div id="chaptersNav"></div>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <div class="steps" id="stepsNav"></div>
+        <div class="row topbar-status-row">
+          <div class="subtitle service-status" id="apiProxyHint"></div>
+          <div class="subtitle service-status" id="envHint"></div>
+        </div>
+      </div>
+      <div class="content-panel" id="contentPanel"></div>
+    </main>
+  </div>
+
+  <input type="file" id="hiddenFileInput" multiple accept="image/*" style="display:none" />
+
+  <!-- 运行时环境变量（公开版使用本地占位配置） -->
+  <script src="./src/config/env.js"></script>
+
+  <script>
+    const script = document.createElement('script');
+    script.type = 'module';
+    script.src = "./src/app.js?v=" + Date.now();
+    document.body.appendChild(script);
+  </script>
+  <script>
+    (function () {
+      const STORAGE_KEY = "pair-style-planning-onboarding-v1";
+      const OVERLAY_ID = "pairOnboardingOverlay";
+      const FOCUS_PADDING = 8;
+      const CARD_GAP = 12;
+      const VIEWPORT_PADDING = 12;
+      const RECHECK_INTERVAL = 350;
+
+      const STEP_CONFIG = [
+        {
+          text: "为确保后续内容生成准确性，请按顺序生成",
+          getTargets() {
+            const expected = ["一、内容", "二、全局", "三、总结"];
+            const expectedSet = new Set(expected.map(normalizeText));
+            return Array.from(document.querySelectorAll(".nav-filter-group .filter-btn"))
+              .filter((btn) => expectedSet.has(normalizeText(btn.textContent)));
+          }
+        },
+        {
+          text: "正文目录页自动同步，无需生成",
+          getTargets() {
+            const expected = ["关键单品目录", "关键图案目录", "品牌推荐目录"].map(normalizeText);
+            const spans = Array.from(document.querySelectorAll(".chapter-item span"));
+            const targets = [];
+            spans.forEach((span) => {
+              const spanText = normalizeText(span.textContent);
+              if (expected.some((name) => spanText.includes(name))) {
+                targets.push(span.closest(".chapter-item") || span);
+              }
+            });
+            return uniqueElements(targets);
+          }
+        },
+        {
+          text: "可实时预览报告详情",
+          getTargets() {
+            const btn = document.getElementById("btnTogglePreview");
+            return btn ? [btn] : [];
+          }
+        }
+      ];
+
+      let started = false;
+      let stepIndex = 0;
+      let overlayEl = null;
+      let dimTopEl = null;
+      let dimLeftEl = null;
+      let dimRightEl = null;
+      let dimBottomEl = null;
+      let cardEl = null;
+      let progressEl = null;
+      let textEl = null;
+      let waitEl = null;
+      let actionBtn = null;
+      let rafId = 0;
+      let waitTimer = 0;
+      let observer = null;
+
+      function normalizeText(value) {
+        return String(value || "").replace(/\s+/g, "");
+      }
+
+      function uniqueElements(nodes) {
+        const seen = new Set();
+        const result = [];
+        nodes.forEach((node) => {
+          if (!node || seen.has(node)) return;
+          seen.add(node);
+          result.push(node);
+        });
+        return result;
+      }
+
+      function clamp(num, min, max) {
+        return Math.min(Math.max(num, min), max);
+      }
+
+      function isCompleted() {
+        try {
+          return localStorage.getItem(STORAGE_KEY) === "done";
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function markCompleted() {
+        try {
+          localStorage.setItem(STORAGE_KEY, "done");
+        } catch (e) {
+          // ignore storage errors
+        }
+      }
+
+      function isPlanningReportActive() {
+        const select = document.getElementById("reportTypeSelect");
+        return !!select && (select.value === "style_planning" || select.value === "theme_theme_planning");
+      }
+
+      function isRenderable(el) {
+        if (!el || !el.getBoundingClientRect) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      }
+
+      function getCurrentTargets() {
+        const step = STEP_CONFIG[stepIndex];
+        if (!step || typeof step.getTargets !== "function") return [];
+        return step.getTargets().filter(isRenderable);
+      }
+
+      function getFocusRect(targets) {
+        if (!targets || !targets.length) return null;
+        let minLeft = Infinity;
+        let minTop = Infinity;
+        let maxRight = -Infinity;
+        let maxBottom = -Infinity;
+
+        targets.forEach((el) => {
+          const rect = el.getBoundingClientRect();
+          minLeft = Math.min(minLeft, rect.left);
+          minTop = Math.min(minTop, rect.top);
+          maxRight = Math.max(maxRight, rect.right);
+          maxBottom = Math.max(maxBottom, rect.bottom);
+        });
+
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const left = clamp(minLeft - FOCUS_PADDING, 0, vw);
+        const top = clamp(minTop - FOCUS_PADDING, 0, vh);
+        const right = clamp(maxRight + FOCUS_PADDING, 0, vw);
+        const bottom = clamp(maxBottom + FOCUS_PADDING, 0, vh);
+
+        return {
+          left,
+          top,
+          right,
+          bottom,
+          width: Math.max(0, right - left),
+          height: Math.max(0, bottom - top)
+        };
+      }
+
+      function setRect(el, left, top, width, height) {
+        if (!el) return;
+        if (width <= 0 || height <= 0) {
+          el.style.display = "none";
+          return;
+        }
+        el.style.display = "block";
+        el.style.left = left + "px";
+        el.style.top = top + "px";
+        el.style.width = width + "px";
+        el.style.height = height + "px";
+      }
+
+      function applyDimAround(focusRect) {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        if (!focusRect) {
+          setRect(dimTopEl, 0, 0, vw, vh);
+          setRect(dimLeftEl, 0, 0, 0, 0);
+          setRect(dimRightEl, 0, 0, 0, 0);
+          setRect(dimBottomEl, 0, 0, 0, 0);
+          return;
+        }
+
+        const left = clamp(focusRect.left, 0, vw);
+        const top = clamp(focusRect.top, 0, vh);
+        const right = clamp(focusRect.right, 0, vw);
+        const bottom = clamp(focusRect.bottom, 0, vh);
+        const holeWidth = Math.max(0, right - left);
+        const holeHeight = Math.max(0, bottom - top);
+
+        setRect(dimTopEl, 0, 0, vw, top);
+        setRect(dimLeftEl, 0, top, left, holeHeight);
+        setRect(dimRightEl, right, top, vw - right, holeHeight);
+        setRect(dimBottomEl, 0, bottom, vw, vh - bottom);
+      }
+
+      function positionCardNearFocus(focusRect) {
+        if (!cardEl) return;
+
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const cardRect = cardEl.getBoundingClientRect();
+        const cardW = Math.min(cardRect.width || 320, Math.max(200, vw - VIEWPORT_PADDING * 2));
+        const cardH = cardRect.height || 180;
+
+        let targetLeft = vw - cardW - VIEWPORT_PADDING;
+        let targetTop = vh - cardH - VIEWPORT_PADDING;
+
+        if (focusRect) {
+          const alignedX = clamp(focusRect.left, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, vw - cardW - VIEWPORT_PADDING));
+          const alignedY = clamp(focusRect.top, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, vh - cardH - VIEWPORT_PADDING));
+
+          const candidates = [
+            { left: alignedX, top: focusRect.bottom + CARD_GAP },
+            { left: alignedX, top: focusRect.top - cardH - CARD_GAP },
+            { left: focusRect.right + CARD_GAP, top: alignedY },
+            { left: focusRect.left - cardW - CARD_GAP, top: alignedY }
+          ];
+
+          const fit = candidates.find((pos) => {
+            return (
+              pos.left >= VIEWPORT_PADDING &&
+              pos.top >= VIEWPORT_PADDING &&
+              pos.left + cardW <= vw - VIEWPORT_PADDING &&
+              pos.top + cardH <= vh - VIEWPORT_PADDING
+            );
+          });
+
+          if (fit) {
+            targetLeft = fit.left;
+            targetTop = fit.top;
+          }
+        }
+
+        targetLeft = clamp(targetLeft, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, vw - cardW - VIEWPORT_PADDING));
+        targetTop = clamp(targetTop, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, vh - cardH - VIEWPORT_PADDING));
+        cardEl.style.left = targetLeft + "px";
+        cardEl.style.top = targetTop + "px";
+      }
+
+      function renderCurrentStep() {
+        if (!started || !overlayEl) return;
+
+        if (!isPlanningReportActive()) {
+          progressEl.textContent = "请先切换到企划模板";
+          textEl.textContent = "当前引导仅在企划模板类型下生效。";
+          waitEl.textContent = "切换后将自动继续。";
+          actionBtn.disabled = true;
+          actionBtn.textContent = "下一步";
+          applyDimAround(null);
+          positionCardNearFocus(getFocusRect([document.getElementById("reportTypeSelect")].filter(isRenderable)));
+          return;
+        }
+
+        const step = STEP_CONFIG[stepIndex];
+        const total = STEP_CONFIG.length;
+        const targets = getCurrentTargets();
+        const isLast = stepIndex === total - 1;
+
+        progressEl.textContent = "步骤 " + (stepIndex + 1) + " / " + total;
+        textEl.textContent = step.text;
+        actionBtn.textContent = isLast ? "完成" : "下一步";
+
+        if (!targets.length) {
+          waitEl.textContent = "正在等待目标元素渲染...";
+          actionBtn.disabled = true;
+          applyDimAround(null);
+          const anchor = document.getElementById("chaptersNav") || document.getElementById("contentPanel");
+          positionCardNearFocus(getFocusRect([anchor].filter(isRenderable)));
+          return;
+        }
+
+        waitEl.textContent = "";
+        actionBtn.disabled = false;
+        const focusRect = getFocusRect(targets);
+        applyDimAround(focusRect);
+        positionCardNearFocus(focusRect);
+      }
+
+      function scheduleRender() {
+        if (!started) return;
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(renderCurrentStep);
+      }
+
+      function cleanup(shouldMarkDone) {
+        started = false;
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
+        if (waitTimer) clearInterval(waitTimer);
+        waitTimer = 0;
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+        }
+
+        window.removeEventListener("resize", scheduleRender, true);
+        window.removeEventListener("scroll", scheduleRender, true);
+
+        if (overlayEl && overlayEl.parentNode) {
+          overlayEl.parentNode.removeChild(overlayEl);
+        }
+        overlayEl = null;
+        dimTopEl = null;
+        dimLeftEl = null;
+        dimRightEl = null;
+        dimBottomEl = null;
+        cardEl = null;
+        progressEl = null;
+        textEl = null;
+        waitEl = null;
+        actionBtn = null;
+
+        if (shouldMarkDone) markCompleted();
+      }
+
+      function handleNext() {
+        if (stepIndex >= STEP_CONFIG.length - 1) {
+          cleanup(true);
+          return;
+        }
+        stepIndex += 1;
+        scheduleRender();
+      }
+
+      function createOverlay() {
+        overlayEl = document.createElement("div");
+        overlayEl.id = OVERLAY_ID;
+        overlayEl.className = "pair-onboarding-overlay";
+        overlayEl.innerHTML = [
+          '<div class="pair-onboarding-dim-layer">',
+          '<div class="pair-onboarding-dim pair-dim-top"></div>',
+          '<div class="pair-onboarding-dim pair-dim-left"></div>',
+          '<div class="pair-onboarding-dim pair-dim-right"></div>',
+          '<div class="pair-onboarding-dim pair-dim-bottom"></div>',
+          "</div>",
+          '<div class="pair-onboarding-card">',
+          '<div class="pair-onboarding-title">注意事项</div>',
+          '<div class="pair-onboarding-progress"></div>',
+          '<div class="pair-onboarding-text"></div>',
+          '<div class="pair-onboarding-hint"></div>',
+          '<div class="pair-onboarding-actions">',
+          '<button class="pair-onboarding-btn" type="button">下一步</button>',
+          "</div>",
+          "</div>"
+        ].join("");
+
+        document.body.appendChild(overlayEl);
+
+        dimTopEl = overlayEl.querySelector(".pair-dim-top");
+        dimLeftEl = overlayEl.querySelector(".pair-dim-left");
+        dimRightEl = overlayEl.querySelector(".pair-dim-right");
+        dimBottomEl = overlayEl.querySelector(".pair-dim-bottom");
+
+        cardEl = overlayEl.querySelector(".pair-onboarding-card");
+        progressEl = overlayEl.querySelector(".pair-onboarding-progress");
+        textEl = overlayEl.querySelector(".pair-onboarding-text");
+        waitEl = overlayEl.querySelector(".pair-onboarding-hint");
+        actionBtn = overlayEl.querySelector(".pair-onboarding-btn");
+        actionBtn.addEventListener("click", handleNext);
+      }
+
+      function startGuide() {
+        if (started || isCompleted()) return;
+        createOverlay();
+        started = true;
+        stepIndex = 0;
+
+        observer = new MutationObserver(scheduleRender);
+        observer.observe(document.body, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          characterData: true
+        });
+
+        window.addEventListener("resize", scheduleRender, true);
+        window.addEventListener("scroll", scheduleRender, true);
+        waitTimer = window.setInterval(scheduleRender, RECHECK_INTERVAL);
+
+        scheduleRender();
+      }
+
+      function canStartNow() {
+        if (!isPlanningReportActive()) return false;
+        const firstStepTargets = STEP_CONFIG[0].getTargets().filter(isRenderable);
+        return firstStepTargets.length > 0;
+      }
+
+      function tryStartGuide() {
+        if (started || isCompleted()) return;
+        if (canStartNow()) startGuide();
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        if (isCompleted()) return;
+
+        const bootObserver = new MutationObserver(function () {
+          tryStartGuide();
+          if (started) bootObserver.disconnect();
+        });
+        bootObserver.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true
+        });
+
+        document.addEventListener("change", function (e) {
+          const target = e.target;
+          if (target && target.id === "reportTypeSelect") {
+            tryStartGuide();
+          }
+        });
+
+        const bootTimer = window.setInterval(function () {
+          if (started || isCompleted()) {
+            clearInterval(bootTimer);
+            bootObserver.disconnect();
+            return;
+          }
+          tryStartGuide();
+        }, 300);
+
+        setTimeout(tryStartGuide, 80);
+      });
+    })();
+  </script>
+
+</body>
+
+</html>
